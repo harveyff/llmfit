@@ -28,6 +28,26 @@ include!(concat!(env!("OUT_DIR"), "/web_assets.rs"));
 static ASSET_MAP: LazyLock<HashMap<&'static str, &'static EmbeddedAsset>> =
     LazyLock::new(|| EMBEDDED_WEB_ASSETS.iter().map(|a| (a.path, a)).collect());
 
+/// Localhost-only mutating endpoints (plan / download) reject non-loopback
+/// clients by default. Set `LLMFIT_ALLOW_REMOTE=1` when serving the dashboard
+/// behind a reverse proxy (e.g. Olares entrance / Envoy), where ConnectInfo
+/// is never loopback.
+fn allow_remote_mutations() -> bool {
+    std::env::var("LLMFIT_ALLOW_REMOTE")
+        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
+}
+
+fn require_loopback_or_remote_allowed(addr: SocketAddr, action: &str) -> ApiResult<()> {
+    if addr.ip().is_loopback() || allow_remote_mutations() {
+        return Ok(());
+    }
+    Err(ApiError::new(
+        StatusCode::FORBIDDEN,
+        format!("{action} restricted to localhost"),
+    ))
+}
+
 struct AppState {
     node_name: String,
     os: String,
@@ -552,12 +572,7 @@ async fn start_download(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<DownloadBody>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    if !addr.ip().is_loopback() {
-        return Err(ApiError::new(
-            StatusCode::FORBIDDEN,
-            "Downloads restricted to localhost",
-        ));
-    }
+    require_loopback_or_remote_allowed(addr, "Downloads")?;
 
     {
         let dl = state.active_download.read().await;
@@ -687,12 +702,7 @@ async fn download_status(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    if !addr.ip().is_loopback() {
-        return Err(ApiError::new(
-            StatusCode::FORBIDDEN,
-            "Download status restricted to localhost",
-        ));
-    }
+    require_loopback_or_remote_allowed(addr, "Download status")?;
     let dl = state.active_download.read().await;
     match dl.as_ref() {
         Some(d) if d.id == id => Ok(Json(serde_json::json!({
@@ -715,12 +725,7 @@ async fn plan_estimate(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<PlanBody>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    if !addr.ip().is_loopback() {
-        return Err(ApiError::new(
-            StatusCode::FORBIDDEN,
-            "Plan restricted to localhost",
-        ));
-    }
+    require_loopback_or_remote_allowed(addr, "Plan")?;
 
     let model = state
         .models
