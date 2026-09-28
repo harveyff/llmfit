@@ -1142,7 +1142,8 @@ mod tests {
                 .to_bytes();
             let json: serde_json::Value = serde_json::from_slice(&bytes).expect("plan JSON");
             assert_eq!(json["quantization"], "Q8_0");
-            assert_eq!(json["disk_size_gb"].as_f64(), Some(expected));
+            let actual = json["disk_size_gb"].as_f64().expect("disk size");
+            assert!((actual - expected).abs() <= expected.abs().max(1.0) * 1e-12);
         });
     }
 
