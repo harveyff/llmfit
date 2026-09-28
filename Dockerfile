@@ -49,7 +49,7 @@ COPY llmfit-desktop/ ./llmfit-desktop/
 COPY --from=web-builder /app/llmfit-web/dist ./llmfit-web/dist
 
 # Build the release binary for the host architecture
-RUN cargo build --release -p llmfit
+RUN cargo test --release -p llmfit serve_api::tests && cargo build --release -p llmfit
 
 # =========================================================
 # STAGE 3: Unified Runtime Container
